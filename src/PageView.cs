@@ -79,7 +79,8 @@ namespace PdfMini
             get { return _scale / (96f / 72f); }
         }
 
-        public float Scale
+        /// <summary>每 pt 的像素数（1.0 = 72dpi）。</summary>
+        public float PixelScale
         {
             get { return _scale; }
         }

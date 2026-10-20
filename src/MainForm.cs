@@ -348,7 +348,6 @@ namespace PdfMini
             CloseSession();
             Session s = new Session();
             s.BasePath = path;
-            s.Password = pwd;
             PdfDoc doc = new PdfDoc(handle, path);
             s.Docs.Add(doc);
             for (int i = 0; i < count; i++) s.Pages.Add(new PageRef(doc, i));
@@ -415,7 +414,7 @@ namespace PdfMini
             if (_cur >= _s.Count) _cur = _s.Count - 1;
 
             _view.SetScale(ComputeScale(), _view.PageCount > 0);
-            _zoom = _view.Scale / BaseScale;
+            _zoom = _view.PixelScale / BaseScale;
             UpdateStatus();
         }
 

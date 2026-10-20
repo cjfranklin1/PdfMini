@@ -46,7 +46,6 @@ namespace PdfMini
         public string BasePath;
 
         public bool Dirty;
-        public string Password;
 
         public int Count { get { return Pages.Count; } }
 
