@@ -1,4 +1,4 @@
-# 拉取 PDF 渲染引擎 pdfium（Windows x64 预编译）
+﻿# 拉取 PDF 渲染引擎 pdfium（Windows x64 预编译）
 # 用法: powershell -ExecutionPolicy Bypass -File tools\fetch-pdfium.ps1
 # 说明: pdfium.dll 约 7.2MB，不入库；构建/运行都需要它，放在 dist\ 与 vendor\bin\ 下。
 param(
