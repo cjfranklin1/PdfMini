@@ -5,6 +5,14 @@ Windows 单文件小工具。做两件事：**舒服地读 PDF**，**顺手拆�
 
 ![阅读界面](docs/screenshots/01-reading.png)
 
+## 下载（不用自己编译）
+
+到 [Releases](https://github.com/cjfranklin1/PdfMini/releases/latest) 下载 `PdfMini-1.0.0-win-x64.zip`（约 3.6 MB），
+解压到任意目录，双击 `PdfMini.exe` 即可 —— 包内已含 `pdfium.dll`，无需安装任何运行库。
+
+> exe 未做代码签名，首次运行 Windows SmartScreen 可能提示，点「更多信息 → 仍要运行」。
+> 校验：`sha256` 见 Release 说明页。
+
 ## 界面
 
 | 大纲面板（PDF 书签，点即跳页） | 搜索高亮（黄色块精确压在命中文字上） |

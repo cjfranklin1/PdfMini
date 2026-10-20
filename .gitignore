@@ -26,3 +26,6 @@ test/*.ps1
 *.user
 .vs/
 .codexhome/
+
+# ── 本地发布包（走 GitHub Releases，不入库）
+release/
