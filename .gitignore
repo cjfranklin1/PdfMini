@@ -1,0 +1,28 @@
+# ── 构建产物（build.cmd 生成，不入库）
+dist/*.exe
+dist/*.dll
+dist/*.pdb
+test/bin/
+stage/
+*.obj
+*.pdb
+*.tmp
+
+# ── 第三方二进制 / 解包产物（用 tools/fetch-pdfium.ps1 拉取，不入库）
+vendor/
+
+# ── 由 tools/make-icon.ps1 生成的中间预览图（只保留 app.ico）
+assets/icon*.png
+
+# ── 测试运行时产物（可由 tools/make-test-pdf.py 与 UiTest.exe 重新生成）
+test/*.pdf
+test/*.png
+test/*.txt
+test/*.log
+test/*.ps1
+
+# ── 本机杂项
+*.bak
+*.user
+.vs/
+.codexhome/
