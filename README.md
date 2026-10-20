@@ -120,4 +120,7 @@ tools\make-test-pdf.py → 生成测试素材（sample6 / extra3 / 带书签的 
 
 ## 许可
 
-PDF 渲染引擎 pdfium：BSD-3-Clause（见 `vendor/LICENSE`）。
+- 本项目源码：**MIT** — 见 [LICENSE](LICENSE)
+- PDF 渲染引擎 **pdfium**：**BSD-3-Clause**（The PDFium Authors）
+- 预编译构件来自 **pdfium-binaries**：**MIT**（Benoit Blanchon）
+- 第三方许可证全文与声明见 [NOTICE.md](NOTICE.md) / [third_party/](third_party/)
