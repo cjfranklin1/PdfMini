@@ -25,6 +25,8 @@ namespace PdfMini
         public bool OriginalSize;                     // 尽量按原始大小（仍会缩到格内）
         public int PageFrom = 1;                      // 打印范围：起始页（1 基）
         public int PageTo = 0;                        // 打印范围：结束页（0 = 到最后一页）
+        public string PrinterName = "";               // 打印机（空 = 系统默认）
+        public int Copies = 1;                        // 份数
     }
 
     /// <summary>版面计算：把可打印区域切成 N 个格子（单位 1/100 英寸）</summary>
@@ -107,6 +109,8 @@ namespace PdfMini
         private readonly CheckBox _chkOriginal;
         private readonly NumericUpDown _numFrom;
         private readonly NumericUpDown _numTo;
+        private readonly ComboBox _cbPrinter;
+        private readonly NumericUpDown _numCopies;
         private readonly Label _lblHint;
 
         private readonly int _pageCount;
@@ -123,7 +127,7 @@ namespace PdfMini
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(436, 396);
+            ClientSize = new Size(452, 512);
             Font = new Font("Microsoft YaHei UI", 9f);
 
             Label title = new Label();
@@ -206,21 +210,77 @@ namespace PdfMini
             _chkOriginal.Checked = init.OriginalSize;
             Controls.Add(_chkOriginal);
 
+            // 打印机
+            Label lPrinter = new Label();
+            lPrinter.Text = "打印机";
+            lPrinter.Location = new Point(18, 254);
+            lPrinter.AutoSize = true;
+            Controls.Add(lPrinter);
+
+            _cbPrinter = new ComboBox();
+            _cbPrinter.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cbPrinter.Location = new Point(103, 251);
+            _cbPrinter.Width = 330;
+            foreach (string name in PrinterSettings.InstalledPrinters)
+                _cbPrinter.Items.Add(name);
+            if (_cbPrinter.Items.Count == 0)
+                _cbPrinter.Items.Add("（未检测到打印机）");
+            string want = string.IsNullOrEmpty(init.PrinterName) ? null : init.PrinterName;
+            int sel = 0;
+            if (want != null)
+            {
+                int idx = _cbPrinter.Items.IndexOf(want);
+                if (idx >= 0) sel = idx;
+            }
+            else
+            {
+                try
+                {
+                    PrinterSettings ps = new PrinterSettings();
+                    int idx = _cbPrinter.Items.IndexOf(ps.PrinterName);
+                    if (idx >= 0) sel = idx;
+                }
+                catch { }
+            }
+            _cbPrinter.SelectedIndex = sel;
+            Controls.Add(_cbPrinter);
+
+            // 份数
+            Label lCopies = new Label();
+            lCopies.Text = "份数";
+            lCopies.Location = new Point(18, 290);
+            lCopies.AutoSize = true;
+            Controls.Add(lCopies);
+
+            _numCopies = new NumericUpDown();
+            _numCopies.Location = new Point(103, 287);
+            _numCopies.Width = 62;
+            _numCopies.Minimum = 1;
+            _numCopies.Maximum = 99;
+            _numCopies.Value = Math.Min(Math.Max(1, init.Copies), 99);
+            Controls.Add(_numCopies);
+
+            Label lCopies2 = new Label();
+            lCopies2.Text = "份";
+            lCopies2.Location = new Point(171, 290);
+            lCopies2.AutoSize = true;
+            Controls.Add(lCopies2);
+
             // 打印范围
             Label lRange = new Label();
             lRange.Text = "打印范围";
-            lRange.Location = new Point(18, 254);
+            lRange.Location = new Point(18, 326);
             lRange.AutoSize = true;
             Controls.Add(lRange);
 
             Label lFrom = new Label();
             lFrom.Text = "第";
-            lFrom.Location = new Point(103, 254);
+            lFrom.Location = new Point(103, 326);
             lFrom.AutoSize = true;
             Controls.Add(lFrom);
 
             _numFrom = new NumericUpDown();
-            _numFrom.Location = new Point(124, 251);
+            _numFrom.Location = new Point(124, 323);
             _numFrom.Width = 62;
             _numFrom.Minimum = 1;
             _numFrom.Maximum = Math.Max(1, _pageCount);
@@ -229,12 +289,12 @@ namespace PdfMini
 
             Label lTo = new Label();
             lTo.Text = "页 到";
-            lTo.Location = new Point(192, 254);
+            lTo.Location = new Point(192, 326);
             lTo.AutoSize = true;
             Controls.Add(lTo);
 
             _numTo = new NumericUpDown();
-            _numTo.Location = new Point(236, 251);
+            _numTo.Location = new Point(236, 323);
             _numTo.Width = 62;
             _numTo.Minimum = 1;
             _numTo.Maximum = Math.Max(1, _pageCount);
@@ -245,26 +305,26 @@ namespace PdfMini
 
             Label lTo2 = new Label();
             lTo2.Text = "页（共 " + _pageCount + " 页）";
-            lTo2.Location = new Point(304, 254);
+            lTo2.Location = new Point(304, 326);
             lTo2.AutoSize = true;
             Controls.Add(lTo2);
 
             _lblHint = new Label();
-            _lblHint.Location = new Point(18, 288);
-            _lblHint.Size = new Size(400, 44);
+            _lblHint.Location = new Point(18, 364);
+            _lblHint.Size = new Size(416, 60);
             _lblHint.ForeColor = Color.FromArgb(90, 90, 90);
             Controls.Add(_lblHint);
 
             Button ok = new Button();
             ok.Text = "预览并打印";
-            ok.Location = new Point(210, 348);
+            ok.Location = new Point(224, 464);
             ok.Size = new Size(110, 28);
             ok.DialogResult = DialogResult.OK;
             Controls.Add(ok);
 
             Button cancel = new Button();
             cancel.Text = "取消";
-            cancel.Location = new Point(330, 348);
+            cancel.Location = new Point(346, 464);
             cancel.Size = new Size(76, 28);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
@@ -333,6 +393,9 @@ namespace PdfMini
             r.OriginalSize = _chkOriginal.Checked;
             r.PageFrom = (int)_numFrom.Value;
             r.PageTo = (int)_numTo.Value;
+            r.PrinterName = _cbPrinter.SelectedItem == null
+                ? "" : _cbPrinter.SelectedItem.ToString();
+            r.Copies = (int)_numCopies.Value;
             if (r.PageTo < r.PageFrom) r.PageTo = r.PageFrom;
             Result = r;
         }

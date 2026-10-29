@@ -701,6 +701,13 @@ namespace PdfMini
                     doc.DocumentName = _lblFile.Text;
                     doc.PrintPage += PrintNupPage;
 
+                    // 应用面板里选的打印机与份数
+                    if (!string.IsNullOrEmpty(_nup.PrinterName))
+                    {
+                        try { doc.PrinterSettings.PrinterName = _nup.PrinterName; } catch { }
+                    }
+                    if (_nup.Copies > 1) doc.PrinterSettings.Copies = (short)_nup.Copies;
+
                     int from = Math.Max(1, Math.Min(_nup.PageFrom, _s.Count));
                     int to = _nup.PageTo <= 0
                         ? _s.Count
