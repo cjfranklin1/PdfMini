@@ -373,6 +373,108 @@ namespace PdfMini
                     Check(false, "打印链路异常: " + pex.Message);
                 }
 
+                // ── 排版打印：2 页排一张 A4（报销车票场景）──
+                try
+                {
+                    string nupOut = Path.Combine(outDir, "ui_nup2.pdf");
+                    if (File.Exists(nupOut)) File.Delete(nupOut);
+
+                    int total = 0;
+                    FieldInfo fs = typeof(MainForm).GetField("_s", BindingFlags.NonPublic | BindingFlags.Instance);
+                    object sess = fs.GetValue(form);
+                    PropertyInfo pcnt = sess.GetType().GetProperty("Count");
+                    total = (int)pcnt.GetValue(sess, null);
+                    Console.WriteLine("   源文档共 " + total + " 页");
+
+                    NupSettings cfg = new NupSettings();
+                    cfg.PerSheet = 2;
+                    cfg.Direction = NupDirection.Vertical;
+                    cfg.GapMm = 3f;
+                    cfg.DrawBorder = true;
+                    cfg.OriginalSize = false;
+
+                    FieldInfo fn = typeof(MainForm).GetField("_nup", BindingFlags.NonPublic | BindingFlags.Instance);
+                    fn.SetValue(form, cfg);
+
+                    using (PrintDocument pd2 = new PrintDocument())
+                    {
+                        pd2.PrinterSettings.PrinterName = "Microsoft Print to PDF";
+                        if (pd2.PrinterSettings.IsValid)
+                        {
+                            pd2.PrinterSettings.PrintToFile = true;
+                            pd2.PrinterSettings.PrintFileName = Path.GetFullPath(nupOut);
+                            pd2.DocumentName = "PdfMini nup test";
+
+                            FieldInfo fc2 = typeof(MainForm).GetField("_printCursor", BindingFlags.NonPublic | BindingFlags.Instance);
+                            FieldInfo ft2 = typeof(MainForm).GetField("_printTo", BindingFlags.NonPublic | BindingFlags.Instance);
+                            fc2.SetValue(form, 0);
+                            ft2.SetValue(form, total);
+
+                            MethodInfo ph2 = typeof(MainForm).GetMethod("PrintNupPage", BindingFlags.NonPublic | BindingFlags.Instance);
+                            Check(ph2 != null, "PrintNupPage 方法存在");
+                            if (ph2 != null)
+                            {
+                                pd2.PrintPage += (PrintPageEventHandler)Delegate.CreateDelegate(typeof(PrintPageEventHandler), form, ph2);
+                                pd2.Print();
+
+                                IntPtr hp2 = PdfApi.FPDF_LoadDocument(PdfApi.Utf8Z(Path.GetFullPath(nupOut)), null);
+                                Check(hp2 != IntPtr.Zero, "排版打印产物可回读（" + (File.Exists(nupOut) ? new FileInfo(nupOut).Length + " bytes" : "无文件") + "）");
+                                if (hp2 != IntPtr.Zero)
+                                {
+                                    int outPages = PdfApi.FPDF_GetPageCount(hp2);
+                                    int expect = (total + 1) / 2;
+                                    Check(outPages == expect,
+                                        "2页/张 → 输出 " + outPages + " 张（应为 " + expect + "）");
+
+                                    IntPtr pp2 = PdfApi.FPDF_LoadPage(hp2, 0);
+                                    if (pp2 != IntPtr.Zero)
+                                    {
+                                        float w2 = PdfApi.FPDF_GetPageWidthF(pp2);
+                                        float h2 = PdfApi.FPDF_GetPageHeightF(pp2);
+                                        Check(w2 > 500 && w2 < 700 && h2 > 700 && h2 < 950,
+                                            "输出纸张 = A4 (" + w2.ToString("F0") + "x" + h2.ToString("F0") + " pt)");
+
+                                        Bitmap nupShot = PdfApi.RenderPage(pp2, 96f / 72f, 0, false);
+                                        if (nupShot != null)
+                                        {
+                                            // 上下两半各统计非白像素，验证确实是 2-up
+                                            int inkTop = 0, inkBottom = 0;
+                                            int halfY = nupShot.Height / 2;
+                                            for (int y = 0; y < nupShot.Height; y += 4)
+                                            {
+                                                for (int x = 0; x < nupShot.Width; x += 4)
+                                                {
+                                                    Color c = nupShot.GetPixel(x, y);
+                                                    bool inked = !(c.R > 240 && c.G > 240 && c.B > 240);
+                                                    if (inked) { if (y < halfY) inkTop++; else inkBottom++; }
+                                                }
+                                            }
+                                            Check(inkTop > 30 && inkBottom > 30,
+                                                "上下两半都有内容（上 " + inkTop + " / 下 " + inkBottom + "）");
+                                            Check(Math.Abs(inkTop - inkBottom) < Math.Max(inkTop, inkBottom) * 0.85,
+                                                "上下内容量接近（对称排版）");
+
+                                            nupShot.Save(Path.Combine(outDir, "ui_nup2_page1.png"), ImageFormat.Png);
+                                            Console.WriteLine("   snapshot -> ui_nup2_page1.png (" + nupShot.Width + "x" + nupShot.Height + ")");
+                                            nupShot.Dispose();
+                                        }
+                                        PdfApi.FPDF_ClosePage(pp2);
+                                    }
+                                    PdfApi.FPDF_CloseDocument(hp2);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("   (跳过排版打印：没有 Microsoft Print to PDF)");
+                        }
+                    }
+                }
+                catch (Exception nex)
+                {
+                    Check(false, "排版打印异常: " + nex.Message);
+                }
+
                 // ── 编辑：删第3页 + 第1页转90°，走真实 SaveRefs
                 s.Pages.RemoveAt(2);
                 s.Pages[0].Rot = 90;

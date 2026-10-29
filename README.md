@@ -132,3 +132,5 @@ tools\make-test-pdf.py → 生成测试素材（sample6 / extra3 / 带书签的 
 - PDF 渲染引擎 **pdfium**：**BSD-3-Clause**（The PDFium Authors）
 - 预编译构件来自 **pdfium-binaries**：**MIT**（Benoit Blanchon）
 - 第三方许可证全文与声明见 [NOTICE.md](NOTICE.md) / [third_party/](third_party/)
+
+- **排版打印（N-up）**：2 张车票排一页 A4，自动选上下/左右，带打印预览和裁剪虚线

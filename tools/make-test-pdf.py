@@ -3,12 +3,13 @@
 
 用法: python3 tools/make-test-pdf.py <输出目录>
 生成: sample6.pdf(6页) extra3.pdf(3页) outline.pdf(4页+3条书签)
+      ticket2.pdf(2页 176x100mm 横版，排版打印测试用)
 """
 import os
 import sys
 
 
-def build_pdf(path, page_count, title_prefix, outline=None):
+def build_pdf(path, page_count, title_prefix, outline=None, page_size=(595, 842)):
     """outline: [(title, page_index_0based, [children...]), ...]"""
     parts = []
 
@@ -25,21 +26,31 @@ def build_pdf(path, page_count, title_prefix, outline=None):
     font_num = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
 
     page_nums = []
+    w = int(page_size[0])
+    h = int(page_size[1])
     for i in range(page_count):
         page_num = reserve()
         content_num = reserve()
+        # 内容坐标按页面尺寸缩放（基准 A4 595x842），这样小车票页也能正常显示
+        sy = h / 842.0
+        sx = w / 595.0
+        m = min(sy, sx)          # 字号按较小比例缩，避免溢出
+        def T(size, x, y, text):
+            return ("BT /F1 %.1f Tf %.1f %.1f Td (%s) Tj ET"
+                    % (max(5.0, size * m), x * sx, y * sy, text))
+
         lines = [
-            "BT /F1 28 Tf 72 760 Td (%s - Page %d) Tj ET" % (title_prefix, i + 1),
-            "BT /F1 14 Tf 72 700 Td (keyword-alpha line on page %d) Tj ET" % (i + 1),
-            "BT /F1 11 Tf 72 640 Td (Outline test page %d / %d) Tj ET" % (i + 1, page_count),
+            T(28, 72, 760, "%s - Page %d" % (title_prefix, i + 1)),
+            T(14, 72, 700, "keyword-alpha line on page %d" % (i + 1)),
+            T(11, 72, 640, "Outline test page %d / %d" % (i + 1, page_count)),
         ]
         for k in range(6):
-            lines.append("BT /F1 11 Tf 72 %d Td (Body line %d on page %d.) Tj ET" % (600 - k * 24, k + 1, i + 1))
+            lines.append(T(11, 72, 600 - k * 24, "Body line %d on page %d." % (k + 1, i + 1)))
         stream = "\n".join(lines).encode("latin-1")
         parts[page_num - 1] = (
-            "<< /Type /Page /Parent %d 0 R /MediaBox [0 0 595 842] "
+            "<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %d %d] "
             "/Resources << /Font << /F1 %d 0 R >> >> /Contents %d 0 R >>"
-            % (pages_num, font_num, content_num)
+            % (pages_num, int(page_size[0]), int(page_size[1]), font_num, content_num)
         ).encode()
         parts[content_num - 1] = (
             b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
@@ -130,6 +141,12 @@ def main():
         ("(Chapter 3)", 3, []),
     ]
     build_pdf(os.path.join(out_dir, "outline.pdf"), 4, "Outline Demo", outline)
+
+    # 排版打印（N-up）测试素材：模拟火车票报销凭证
+    # 176 x 100 mm 横版（火车票报销凭证的实际尺寸），2 页 → 应能排进一张 A4
+    build_pdf(os.path.join(out_dir, "ticket2.pdf"), 2,
+              "Railway Ticket Reimbursement",
+              page_size=(int(176 / 25.4 * 72), int(100 / 25.4 * 72)))
 
 
 if __name__ == "__main__":

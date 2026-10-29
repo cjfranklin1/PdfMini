@@ -38,6 +38,7 @@ namespace PdfMini
         private System.Windows.Forms.Timer _resizeTimer;
         private int _printCursor;
         private int _printTo;
+        private NupSettings _nup;                 // 排版打印参数（记忆上次选择）
         private readonly Dictionary<int, List<RectangleF>> _hits = new Dictionary<int, List<RectangleF>>();
         private string _hitQuery;
         private readonly List<SizeF> _sizesPt = new List<SizeF>();
@@ -68,7 +69,7 @@ namespace PdfMini
             MinimumSize = new Size(720, 460);
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
-            AllowDrop = true;
+            try { AllowDrop = true; } catch (InvalidOperationException) { }
             Font = new Font("Microsoft YaHei UI", 9f);
             DoubleBuffered = true;
 
@@ -208,6 +209,7 @@ namespace PdfMini
             bar.Items.Add(MakeButton("插入…", "插到当前页之后", delegate { AskMerge(true); }));
             bar.Items.Add(MakeButton("另存…", "Ctrl+S 不会改动原文件", delegate { AskSaveAs(); }));
             bar.Items.Add(MakeButton("打印…", "Ctrl+P 打印当前文档（所见即所得）", delegate { AskPrint(); }));
+            bar.Items.Add(MakeButton("排版打印…", "Ctrl+Shift+P 多页排一张纸（报销车票：2 页/A4）", delegate { AskNupPrint(); }));
             bar.Items.Add(new ToolStripSeparator());
 
             bar.Items.Add(MakeButton("删页", "Delete", delegate { DeleteSelected(); }));
@@ -266,11 +268,37 @@ namespace PdfMini
             return m;
         }
 
+        /// <summary>
+        /// 非交互式会话（从服务/命令行/WSL 启动）里没有真正的桌面窗口站，
+        /// AllowDrop 会在创建句柄时触发 DragAcceptFiles 失败并抛
+        /// InvalidOperationException("DragDrop 注册失败")。
+        /// 拖放只是便捷功能，失败不应阻断启动。
+        /// </summary>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            try
+            {
+                base.OnHandleCreated(e);
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (ex.Message == null || !ex.Message.Contains("DragDrop"))
+                    throw;
+            }
+        }
+
         private void AttachDrop(Control c)
         {
-            c.AllowDrop = true;
-            c.DragEnter += DropEnter;
-            c.DragDrop += DropFiles;
+            try
+            {
+                c.AllowDrop = true;
+                c.DragEnter += DropEnter;
+                c.DragDrop += DropFiles;
+            }
+            catch (InvalidOperationException)
+            {
+                // 同上：无桌面会话时跳过拖放支持
+            }
         }
 
         private void DropEnter(object sender, DragEventArgs e)
@@ -620,6 +648,124 @@ namespace PdfMini
 
         // ───────────────────────────── 打印 ─────────────────────────────
 
+        /// <summary>当前文档第一页是否为横版（用于自动排列方向）</summary>
+        private bool FirstPageLandscape()
+        {
+            if (_s == null || _s.Count == 0) return false;
+            lock (_s.Sync)
+            {
+                PageRef pr = _s.Pages[0];
+                IntPtr page = PdfApi.FPDF_LoadPage(pr.Doc.Handle, pr.Index);
+                if (page == IntPtr.Zero) return false;
+                try
+                {
+                    float pw = PdfApi.FPDF_GetPageWidthF(page);
+                    float ph = PdfApi.FPDF_GetPageHeightF(page);
+                    bool swap = (pr.Rot % 180) != 0;
+                    float w = swap ? ph : pw;
+                    float h = swap ? pw : ph;
+                    return w > h;
+                }
+                finally
+                {
+                    PdfApi.FPDF_ClosePage(page);
+                }
+            }
+        }
+
+        /// <summary>排版打印：多页排一张纸 + 打印预览</summary>
+        private void AskNupPrint()
+        {
+            if (_s == null || _s.Count == 0)
+            {
+                MessageBox.Show(this, "当前没有可打印的页面。", "排版打印",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            NupSettings seed = _nup ?? new NupSettings();
+            bool land = FirstPageLandscape();
+
+            using (NupSettingsForm dlg = new NupSettingsForm(seed, _s.Count, land))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Result == null)
+                    return;
+                _nup = dlg.Result;
+            }
+
+            try
+            {
+                using (PrintDocument doc = new PrintDocument())
+                {
+                    doc.DocumentName = _lblFile.Text;
+                    doc.PrintPage += PrintNupPage;
+
+                    _printCursor = 0;
+                    _printTo = _s.Count;
+
+                    using (PrintPreviewDialog preview = new PrintPreviewDialog())
+                    {
+                        preview.Text = "打印预览 — " + _nup.PerSheet + " 页/张";
+                        preview.Document = doc;
+                        preview.Width = Math.Min(1100, Screen.PrimaryScreen.WorkingArea.Width - 80);
+                        preview.Height = Math.Min(860, Screen.PrimaryScreen.WorkingArea.Height - 80);
+                        preview.StartPosition = FormStartPosition.CenterParent;
+                        preview.UseAntiAlias = true;
+                        preview.ShowDialog(this);
+                    }
+
+                    if (_printCursor > 0 && _printCursor < _s.Count)
+                        _lblMsg.Text = "排版打印已取消";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "打印出错：" + ex.Message, "排版打印",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        /// <summary>排版打印的 PrintPage：把 N 页画到一张纸上</summary>
+        private void PrintNupPage(object sender, PrintPageEventArgs e)
+        {
+            if (_s == null || _printCursor >= _s.Count || _printCursor >= _printTo)
+            {
+                e.HasMorePages = false;
+                return;
+            }
+
+            NupSettings cfg = _nup ?? new NupSettings();
+            bool land = FirstPageLandscape();
+            Rectangle[] cells = NupLayout.Compute(e.MarginBounds, cfg.PerSheet,
+                cfg.Direction, cfg.GapMm, land);
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+            int drawn = 0;
+            for (int i = 0; i < cells.Length; i++)
+            {
+                int idx = _printCursor + i;
+                if (idx >= _s.Count || idx >= _printTo) break;
+
+                if (cfg.DrawBorder)
+                {
+                    using (Pen p = new Pen(Color.FromArgb(165, 170, 178), 1f))
+                    {
+                        p.DashStyle = DashStyle.Dash;
+                        p.DashPattern = new float[] { 3f, 3f };
+                        e.Graphics.DrawRectangle(p, cells[i]);
+                    }
+                }
+
+                PrintPageToGraphics(e.Graphics, _s.Pages[idx], cells[i], cfg.OriginalSize);
+                drawn++;
+            }
+
+            _printCursor += Math.Max(1, drawn);
+            e.HasMorePages = _printCursor < _s.Count && _printCursor < _printTo;
+        }
+
         private void AskPrint()
         {
             if (_s == null || _s.Count == 0) return;
@@ -676,7 +822,13 @@ namespace PdfMini
         }
 
         /// <summary>把一页画到打印 Graphics 上：300dpi 分条带渲染，峰值内存只一条带子。</summary>
+        /// <param name="originalSize">true = 尽量按 100% 原始大小（放不下时仍等比缩小）</param>
         private void PrintPageToGraphics(Graphics g, PageRef pr, Rectangle margin)
+        {
+            PrintPageToGraphics(g, pr, margin, false);
+        }
+
+        private void PrintPageToGraphics(Graphics g, PageRef pr, Rectangle margin, bool originalSize)
         {
             const float printDpi = 300f;
             const int bandHeight = 768;
@@ -704,6 +856,8 @@ namespace PdfMini
                     float pageW = wPt / 72f * 100f;
                     float pageH = hPt / 72f * 100f;
                     float fit = Math.Min(margin.Width / pageW, margin.Height / pageH);
+                    if (originalSize)
+                        fit = Math.Min(1f, fit);   // 原始大小：放不下才缩
                     float drawW = pageW * fit;
                     float drawH = pageH * fit;
                     float x = margin.X + (margin.Width - drawW) / 2f;
@@ -1507,6 +1661,7 @@ namespace PdfMini
             base.OnKeyDown(e);
             if (e.Control && e.KeyCode == Keys.O) { AskOpen(); e.Handled = true; return; }
             if (e.Control && e.KeyCode == Keys.S) { AskSaveAs(); e.Handled = true; return; }
+            if (e.Control && e.Shift && e.KeyCode == Keys.P) { AskNupPrint(); e.Handled = true; return; }
             if (e.Control && e.KeyCode == Keys.P) { AskPrint(); e.Handled = true; return; }
             if (e.Control && e.KeyCode == Keys.C) { CopyPageText(); e.Handled = true; return; }
             if (e.Control && e.KeyCode == Keys.F)
