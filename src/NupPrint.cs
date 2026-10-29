@@ -23,6 +23,8 @@ namespace PdfMini
         public float GapMm = 2f;                      // 页间距（毫米）
         public bool DrawBorder = true;                // 画裁剪虚线框
         public bool OriginalSize;                     // 尽量按原始大小（仍会缩到格内）
+        public int PageFrom = 1;                      // 打印范围：起始页（1 基）
+        public int PageTo = 0;                        // 打印范围：结束页（0 = 到最后一页）
     }
 
     /// <summary>版面计算：把可打印区域切成 N 个格子（单位 1/100 英寸）</summary>
@@ -103,6 +105,8 @@ namespace PdfMini
         private readonly NumericUpDown _numGap;
         private readonly CheckBox _chkBorder;
         private readonly CheckBox _chkOriginal;
+        private readonly NumericUpDown _numFrom;
+        private readonly NumericUpDown _numTo;
         private readonly Label _lblHint;
 
         private readonly int _pageCount;
@@ -113,13 +117,13 @@ namespace PdfMini
             _pageCount = Math.Max(1, pageCount);
             _firstLandscape = firstIsLandscape;
 
-            Text = "打印排版";
+            Text = "打印";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(430, 336);
+            ClientSize = new Size(436, 396);
             Font = new Font("Microsoft YaHei UI", 9f);
 
             Label title = new Label();
@@ -202,22 +206,65 @@ namespace PdfMini
             _chkOriginal.Checked = init.OriginalSize;
             Controls.Add(_chkOriginal);
 
+            // 打印范围
+            Label lRange = new Label();
+            lRange.Text = "打印范围";
+            lRange.Location = new Point(18, 254);
+            lRange.AutoSize = true;
+            Controls.Add(lRange);
+
+            Label lFrom = new Label();
+            lFrom.Text = "第";
+            lFrom.Location = new Point(103, 254);
+            lFrom.AutoSize = true;
+            Controls.Add(lFrom);
+
+            _numFrom = new NumericUpDown();
+            _numFrom.Location = new Point(124, 251);
+            _numFrom.Width = 62;
+            _numFrom.Minimum = 1;
+            _numFrom.Maximum = Math.Max(1, _pageCount);
+            _numFrom.Value = Math.Min(Math.Max(1, init.PageFrom), Math.Max(1, _pageCount));
+            Controls.Add(_numFrom);
+
+            Label lTo = new Label();
+            lTo.Text = "页 到";
+            lTo.Location = new Point(192, 254);
+            lTo.AutoSize = true;
+            Controls.Add(lTo);
+
+            _numTo = new NumericUpDown();
+            _numTo.Location = new Point(236, 251);
+            _numTo.Width = 62;
+            _numTo.Minimum = 1;
+            _numTo.Maximum = Math.Max(1, _pageCount);
+            _numTo.Value = init.PageTo <= 0
+                ? Math.Max(1, _pageCount)
+                : Math.Min(Math.Max(1, init.PageTo), Math.Max(1, _pageCount));
+            Controls.Add(_numTo);
+
+            Label lTo2 = new Label();
+            lTo2.Text = "页（共 " + _pageCount + " 页）";
+            lTo2.Location = new Point(304, 254);
+            lTo2.AutoSize = true;
+            Controls.Add(lTo2);
+
             _lblHint = new Label();
-            _lblHint.Location = new Point(18, 250);
-            _lblHint.Size = new Size(394, 40);
+            _lblHint.Location = new Point(18, 288);
+            _lblHint.Size = new Size(400, 44);
             _lblHint.ForeColor = Color.FromArgb(90, 90, 90);
             Controls.Add(_lblHint);
 
             Button ok = new Button();
             ok.Text = "预览并打印";
-            ok.Location = new Point(206, 296);
+            ok.Location = new Point(210, 348);
             ok.Size = new Size(110, 28);
             ok.DialogResult = DialogResult.OK;
             Controls.Add(ok);
 
             Button cancel = new Button();
             cancel.Text = "取消";
-            cancel.Location = new Point(324, 296);
+            cancel.Location = new Point(330, 348);
             cancel.Size = new Size(76, 28);
             cancel.DialogResult = DialogResult.Cancel;
             Controls.Add(cancel);
@@ -231,6 +278,8 @@ namespace PdfMini
             _cmbDir.SelectedIndexChanged += OnAnyChanged;
             _numGap.ValueChanged += OnAnyChanged;
             _chkOriginal.CheckedChanged += OnAnyChanged;
+            _numFrom.ValueChanged += OnAnyChanged;
+            _numTo.ValueChanged += OnAnyChanged;
 
             UpdateHint();
 
@@ -253,7 +302,11 @@ namespace PdfMini
         private void UpdateHint()
         {
             int per = PerSheet;
-            int sheets = (int)Math.Ceiling(_pageCount / (double)per);
+            int from = (int)_numFrom.Value;
+            int to = (int)_numTo.Value;
+            if (to < from) to = from;
+            int selected = to - from + 1;
+            int sheets = (int)Math.Ceiling(selected / (double)per);
             string shape = _firstLandscape ? "横版" : "竖版";
             string autoNote = "";
             if (_cmbDir.SelectedIndex == 0 && per == 2)
@@ -261,10 +314,13 @@ namespace PdfMini
                     ? "（首张是" + shape + "，将上下排列）"
                     : "（首张是" + shape + "，将左右排列）";
 
+            string rangeNote = (from == 1 && to == _pageCount)
+                ? "" : string.Format(CultureInfo.InvariantCulture,
+                    "（第 {0}~{1} 页）", from, to);
             _lblHint.Text = string.Format(
                 CultureInfo.InvariantCulture,
-                "共 {0} 页 → 输出 {1} 张纸。{2}",
-                _pageCount, sheets, autoNote);
+                "打印 {0} 页{1} → 输出 {2} 张纸。{3}",
+                selected, rangeNote, sheets, autoNote);
         }
 
         private void Collect()
@@ -275,6 +331,9 @@ namespace PdfMini
             r.GapMm = (float)_numGap.Value;
             r.DrawBorder = _chkBorder.Checked;
             r.OriginalSize = _chkOriginal.Checked;
+            r.PageFrom = (int)_numFrom.Value;
+            r.PageTo = (int)_numTo.Value;
+            if (r.PageTo < r.PageFrom) r.PageTo = r.PageFrom;
             Result = r;
         }
     }

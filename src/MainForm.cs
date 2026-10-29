@@ -208,8 +208,7 @@ namespace PdfMini
             bar.Items.Add(MakeButton("合并…", "把别的 PDF 追加到末尾", delegate { AskMerge(false); }));
             bar.Items.Add(MakeButton("插入…", "插到当前页之后", delegate { AskMerge(true); }));
             bar.Items.Add(MakeButton("另存…", "Ctrl+S 不会改动原文件", delegate { AskSaveAs(); }));
-            bar.Items.Add(MakeButton("打印…", "Ctrl+P 打印当前文档（所见即所得）", delegate { AskPrint(); }));
-            bar.Items.Add(MakeButton("排版打印…", "Ctrl+Shift+P 多页排一张纸（报销车票：2 页/A4）", delegate { AskNupPrint(); }));
+            bar.Items.Add(MakeButton("打印…", "Ctrl+P 打印（可选 1/2/4 页每张、页范围、预览）", delegate { AskNupPrint(); }));
             bar.Items.Add(new ToolStripSeparator());
 
             bar.Items.Add(MakeButton("删页", "Delete", delegate { DeleteSelected(); }));
@@ -684,6 +683,8 @@ namespace PdfMini
             }
 
             NupSettings seed = _nup ?? new NupSettings();
+            if (seed.PageTo <= 0) seed.PageTo = _s.Count;
+            if (seed.PageFrom < 1) seed.PageFrom = 1;
             bool land = FirstPageLandscape();
 
             using (NupSettingsForm dlg = new NupSettingsForm(seed, _s.Count, land))
@@ -700,12 +701,17 @@ namespace PdfMini
                     doc.DocumentName = _lblFile.Text;
                     doc.PrintPage += PrintNupPage;
 
-                    _printCursor = 0;
-                    _printTo = _s.Count;
+                    int from = Math.Max(1, Math.Min(_nup.PageFrom, _s.Count));
+                    int to = _nup.PageTo <= 0
+                        ? _s.Count
+                        : Math.Max(from, Math.Min(_nup.PageTo, _s.Count));
+                    _printCursor = from - 1;
+                    _printTo = to;
 
                     using (PrintPreviewDialog preview = new PrintPreviewDialog())
                     {
-                        preview.Text = "打印预览 — " + _nup.PerSheet + " 页/张";
+                        preview.Text = "打印预览 — " + _nup.PerSheet + " 页/张"
+                            + "，第 " + (from) + "~" + to + " 页";
                         preview.Document = doc;
                         preview.Width = Math.Min(1100, Screen.PrimaryScreen.WorkingArea.Width - 80);
                         preview.Height = Math.Min(860, Screen.PrimaryScreen.WorkingArea.Height - 80);
@@ -766,46 +772,13 @@ namespace PdfMini
             e.HasMorePages = _printCursor < _s.Count && _printCursor < _printTo;
         }
 
+        /// <summary>
+        /// 统一的打印入口：设置（页范围 / 每张页数 / 方向 / 间距 / 裁剪框）
+        /// → 打印预览 → 预览里点「打印」再选打印机。
+        /// </summary>
         private void AskPrint()
         {
-            if (_s == null || _s.Count == 0) return;
-
-            using (PrintDocument document = new PrintDocument())
-            {
-                document.DocumentName = _s.BasePath != null ? Path.GetFileName(_s.BasePath) : "PdfMini 文档";
-                document.PrintPage += PrintOnePage;
-
-                using (PrintDialog dialog = new PrintDialog())
-                {
-                    dialog.Document = document;
-                    dialog.UseEXDialog = true;
-                    dialog.AllowSomePages = true;
-                    dialog.AllowSelection = false;
-                    dialog.PrinterSettings.MinimumPage = 1;
-                    dialog.PrinterSettings.MaximumPage = _s.Count;
-                    dialog.PrinterSettings.FromPage = 1;
-                    dialog.PrinterSettings.ToPage = _s.Count;
-                    if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-                    int from = Math.Max(1, dialog.PrinterSettings.FromPage);
-                    int to = Math.Min(_s.Count, dialog.PrinterSettings.ToPage);
-                    if (to < from) { from = 1; to = _s.Count; }
-
-                    _printCursor = from;
-                    _printTo = to;
-                    try
-                    {
-                        document.Print();
-                        _lblMsg.Text = "已发送打印：" + document.PrinterSettings.PrinterName
-                            + "  第 " + from + "-" + to + " 页";
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show(this, "打印失败：" + ex.Message, "PdfMini",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                }
-            }
+            AskNupPrint();
         }
 
         private void PrintOnePage(object sender, PrintPageEventArgs e)
