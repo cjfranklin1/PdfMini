@@ -31,6 +31,7 @@ namespace PdfMini
         private Session _s;
         private int _cur;
         private int _thumbGen;
+        private int _thumbClickIdx = -1;      // 鼠标刚点中的缩略图（多选时据此判断跳哪页）
         private bool _night;
         private int _fit = 1;            // 0=固定缩放 1=适应宽度 2=适应整页
         private float _zoom = 1f;
@@ -94,6 +95,7 @@ namespace PdfMini
             _thumbs.BackColor = Color.FromArgb(58, 58, 62);
             _thumbs.ForeColor = Color.Gainsboro;
             _thumbs.SelectedIndexChanged += ThumbSelectionChanged;
+            _thumbs.MouseDown += ThumbMouseDown;
             _thumbs.ContextMenuStrip = BuildThumbMenu();
 
             _outline = new TreeView();
@@ -639,9 +641,15 @@ namespace PdfMini
 
         private void OutlineSelected(object sender, TreeViewEventArgs e)
         {
-            if (e.Node == null) return;
+            if (e.Node == null || _s == null) return;
             OutlineItem item = e.Node.Tag as OutlineItem;
-            if (item == null || item.PageIndex < 0 || _s == null) return;
+            if (item == null) return;
+            if (item.PageIndex < 0)
+            {
+                // 书签指向的页不存在（原 PDF 里就没目标，或指向的页已被删掉）
+                _lblMsg.Text = "书签「" + item.Title + "」没有有效目标页";
+                return;
+            }
             GoTo(item.PageIndex);
         }
 
@@ -1019,12 +1027,41 @@ namespace PdfMini
             _suppressSel = false;
         }
 
+        /// <summary>
+        /// 记住鼠标按下时命中的缩略图。ListView 的 SelectedIndices 是按页序排的，
+        /// 多选（Ctrl/Shift 累积）时取「最后一个」会拿到旧的页，导致点了前面的页
+        /// 右侧不跳。用鼠标实际命中的项最准。
+        /// </summary>
+        private void ThumbMouseDown(object sender, MouseEventArgs e)
+        {
+            ListViewItem hit = _thumbs.GetItemAt(e.X, e.Y);
+            _thumbClickIdx = hit == null ? -1 : hit.Index;
+        }
+
         private void ThumbSelectionChanged(object sender, EventArgs e)
         {
             if (_suppressSel || _s == null || _s.Count == 0) return;
-            if (_thumbs.SelectedIndices.Count == 0) return;
-            int idx = _thumbs.SelectedIndices[_thumbs.SelectedIndices.Count - 1];
-            if (idx < 0 || idx >= _s.Count || idx == _cur) return;
+
+            int idx;
+            if (_thumbClickIdx >= 0)
+            {
+                idx = _thumbClickIdx;      // 鼠标点击：以实际命中项为准
+                _thumbClickIdx = -1;
+            }
+            else
+            {
+                // 键盘（方向键）选择：此时只有一项
+                if (_thumbs.SelectedIndices.Count == 0) return;
+                idx = _thumbs.SelectedIndices[_thumbs.SelectedIndices.Count - 1];
+            }
+
+            if (idx < 0 || idx >= _s.Count) return;
+            if (idx == _cur)
+            {
+                // 页码没变，但可能是从别的页滚走了，拉回来
+                GoTo(idx);
+                return;
+            }
             _cur = idx;
             RememberPage();
             RenderCurrent();
