@@ -9,6 +9,7 @@ namespace PdfMini
     /// <summary>把打印对话框画出来存图，用来检查布局</summary>
     internal static class DlgShot
     {
+        [STAThread]
         private static int Main(string[] args)
         {
             string outPath = args.Length > 0 ? args[0] : "test/nup_dialog.png";

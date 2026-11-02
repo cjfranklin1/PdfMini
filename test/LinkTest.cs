@@ -46,6 +46,7 @@ namespace PdfMini
             return m == null ? null : m.Invoke(o, args);
         }
 
+        [STAThread]
         private static int Main(string[] args)
         {
             string pdf = args.Length > 0 ? args[0] : "test\\outline.pdf";
@@ -192,6 +193,49 @@ namespace PdfMini
                 int cur = (int)F(form, "_cur");
                 Console.WriteLine("    多选累积下点第 2 页, _cur = " + cur + "（期望 1）");
                 Check(cur == 1, "多选累积下点前面的页也能跳（修复点）");
+
+                // ── 复现用户报的：先点空白，再点页面，第一次就要跳 ──
+                Console.WriteLine("\n  ── 场景：点空白 → 点第 3 页（第一次就必须跳）──");
+                SetF(form, "_thumbClickIdx", -1);      // 模拟鼠标落在空白
+                lv.SelectedIndices.Clear();             // 空白点击清空选择
+                Pump(500);
+                Console.WriteLine("    点空白后: _cur=" + F(form, "_cur")
+                    + "  SelectedIndices=" + lv.SelectedIndices.Count);
+
+                SetF(form, "_thumbClickIdx", 2);        // 模拟鼠标命中第 3 页
+                lv.Items[2].Selected = true;
+                Pump(800);
+
+                int cur2 = (int)F(form, "_cur");
+                float sy2 = (float)F(view, "_scrollY");
+                System.Collections.IList tops2 = (System.Collections.IList)F(view, "_tops");
+                float top2 = tops2 != null && tops2.Count > 2 ? (float)tops2[2] : -1f;
+                Console.WriteLine("    点第3页后: _cur=" + cur2 + "（期望 2）"
+                    + "  _scrollY=" + sy2.ToString("F1") + "  第3页顶部=" + top2.ToString("F1"));
+                Check(cur2 == 2, "点空白后第一次点页面，当前页立即变第 3 页");
+                Check(top2 >= 0 && Math.Abs(sy2 - top2) < 2f, "点空白后第一次点页面，右侧立即滚到第 3 页");
+                Console.WriteLine("  场景结束\n");
+
+                // ── 场景：点同一书签两次，第二次也要跳回 ──
+                Console.WriteLine("  ── 场景：滚走后重复点同一书签 ──");
+                Call(view, "ScrollToPage", 0);          // 模拟用户滚回第 1 页
+                Pump(700);
+                Console.WriteLine("    滚到第 1 页后: _cur=" + F(form, "_cur"));
+
+                SetF(form, "_outlinePrevSel", target);  // 模拟 MouseDown 命中同一节点
+                TreeNodeMouseClickEventArgs nmc =
+                    new TreeNodeMouseClickEventArgs(target, MouseButtons.Left, 1, 0, 0);
+                Call(form, "OutlineClicked", tv, nmc);  // 触发 NodeMouseClick
+                Pump(800);
+
+                int cur3 = (int)F(form, "_cur");
+                float sy3 = (float)F(view, "_scrollY");
+                float top3b = tops2 != null && tops2.Count > 3 ? (float)tops2[3] : -1f;
+                Console.WriteLine("    重复点 Chapter 3 后: _cur=" + cur3 + "（期望 3）"
+                    + "  _scrollY=" + sy3.ToString("F1") + "  第4页顶部=" + top3b.ToString("F1"));
+                Check(cur3 == 3, "重复点同一书签，当前页回到第 4 页");
+                Check(top3b >= 0 && Math.Abs(sy3 - top3b) < 2f, "重复点同一书签，右侧滚回第 4 页");
+                Console.WriteLine("  场景结束\n");
             }
             else
             {

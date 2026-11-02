@@ -48,6 +48,7 @@ namespace PdfMini
             return m == null ? null : m.Invoke(o, args);
         }
 
+        [STAThread]
         private static int Main(string[] args)
         {
             string pdf = args.Length > 0 ? args[0] : "test\\ticket2.pdf";

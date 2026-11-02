@@ -32,6 +32,7 @@ namespace PdfMini
         private int _cur;
         private int _thumbGen;
         private int _thumbClickIdx = -1;      // 鼠标刚点中的缩略图（多选时据此判断跳哪页）
+        private TreeNode _outlinePrevSel;     // 大纲点击前的选中节点（判断是否重复点同一项）
         private bool _night;
         private int _fit = 1;            // 0=固定缩放 1=适应宽度 2=适应整页
         private float _zoom = 1f;
@@ -70,7 +71,10 @@ namespace PdfMini
             MinimumSize = new Size(720, 460);
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
-            try { AllowDrop = true; } catch (InvalidOperationException) { }
+            if (IsStaThread())
+            {
+                try { AllowDrop = true; } catch (InvalidOperationException) { }
+            }
             Font = new Font("Microsoft YaHei UI", 9f);
             DoubleBuffered = true;
 
@@ -111,6 +115,8 @@ namespace PdfMini
             _outline.ShowNodeToolTips = true;
             _outline.ItemHeight = Math.Max(18, (int)(22 * _dpi));
             _outline.AfterSelect += OutlineSelected;
+            _outline.NodeMouseClick += OutlineClicked;
+            _outline.MouseDown += OutlineMouseDown;
 
             TabPage tabPages = new TabPage("页面");
             tabPages.BackColor = Color.FromArgb(58, 58, 62);
@@ -288,8 +294,19 @@ namespace PdfMini
             }
         }
 
+        /// <summary>拖放（OLE）只能在工作于 STA 的 UI 线程上注册。</summary>
+        private static bool IsStaThread()
+        {
+            return System.Threading.Thread.CurrentThread.GetApartmentState()
+                == System.Threading.ApartmentState.STA;
+        }
+
         private void AttachDrop(Control c)
         {
+            // 非 STA（测试宿主、服务、某些远程会话）注册 OLE 拖放会抛
+            // ThreadStateException，进而被包成 InvalidOperationException，
+            // 在控件创建句柄时炸掉整个窗口。拖放只是便捷功能，直接跳过。
+            if (!IsStaThread()) return;
             try
             {
                 c.AllowDrop = true;
@@ -298,7 +315,7 @@ namespace PdfMini
             }
             catch (InvalidOperationException)
             {
-                // 同上：无桌面会话时跳过拖放支持
+                // 无桌面会话时同样跳过
             }
         }
 
@@ -641,8 +658,25 @@ namespace PdfMini
 
         private void OutlineSelected(object sender, TreeViewEventArgs e)
         {
-            if (e.Node == null || _s == null) return;
-            OutlineItem item = e.Node.Tag as OutlineItem;
+            OutlineGo(e.Node);
+        }
+
+        /// <summary>记录鼠标按下时命中的节点（此时 SelectedNode 还没变）。</summary>
+        private void OutlineMouseDown(object sender, MouseEventArgs e)
+        {
+            _outlinePrevSel = _outline.GetNodeAt(e.X, e.Y);
+        }
+
+        private void OutlineClicked(object sender, TreeNodeMouseClickEventArgs e)
+        {
+            if (e.Node != null && e.Node == _outlinePrevSel)
+                OutlineGo(e.Node);        // 重复点同一项：AfterSelect 不会触发
+        }
+
+        private void OutlineGo(TreeNode node)
+        {
+            if (node == null || _s == null) return;
+            OutlineItem item = node.Tag as OutlineItem;
             if (item == null) return;
             if (item.PageIndex < 0)
             {
@@ -1056,15 +1090,21 @@ namespace PdfMini
             }
 
             if (idx < 0 || idx >= _s.Count) return;
+
             if (idx == _cur)
             {
-                // 页码没变，但可能是从别的页滚走了，拉回来
-                GoTo(idx);
+                // 页码没变（比如点了左侧空白再点同一页），把视图拉回这一页
+                _view.ScrollToPage(idx);
                 return;
             }
+
+            // 关键：先设 _cur 再滚动。ScrollToPage 内部会 UpdateCurrent，
+            // 算出同一页就不会触发 CurrentPageChanged，也就不会走
+            // SyncCurrentFromView → SelectThumb 把用户的多选清掉。
             _cur = idx;
             RememberPage();
-            RenderCurrent();
+            _view.ScrollToPage(idx);
+            UpdateStatus();
         }
 
         private List<int> SelectedPageIndices()

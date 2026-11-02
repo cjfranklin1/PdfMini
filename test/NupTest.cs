@@ -24,6 +24,7 @@ namespace PdfMini
                 what + " → 期望 " + expRows + "行" + expCols + "列，实际 " + r + "行" + c + "列");
         }
 
+        [STAThread]
         private static int Main(string[] args)
         {
             Console.WriteLine("═══ NupLayout 排版计算测试 ═══\n");

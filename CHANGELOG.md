@@ -2,6 +2,20 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.4] — 2026-10-29
+
+修复：测试程序弹「DragDrop 注册失败」异常框。
+
+### 修复
+
+- **5 个测试程序补 `[STAThread]`**（DlgShot / EngineTest / LinkTest / NupE2E / NupTest）：
+  线程不是 STA 时，`ListView.OnHandleCreated` → `Control.SetAcceptDrops` 会抛
+  `ThreadStateException: 在可以调用 OLE 之前，必须将当前线程设置为单线程单元(STA)模式`，
+  被包成 `InvalidOperationException: DragDrop 注册失败` 弹出 .NET 异常框。
+  之前的 `OnHandleCreated` 兜底只包住了 Form 自己的句柄创建，包不住子控件（ListView）。
+- **产品代码加固**：`MainForm` 增加 `IsStaThread()`；非 STA 环境（测试宿主、服务、
+  部分远程会话）直接跳过拖放注册，不再依赖调用方记得加 `[STAThread]`
+
 ## [1.1.3] — 2026-10-29
 
 修复：点左侧缩略图，右侧不跟随。

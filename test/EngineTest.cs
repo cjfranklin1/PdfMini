@@ -19,6 +19,7 @@ namespace PdfMini
             if (!ok) _fail++;
         }
 
+        [STAThread]
         private static int Main(string[] args)
         {
             if (args.Length < 3)
